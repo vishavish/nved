@@ -1,13 +1,15 @@
 ﻿using Spectre.Console;
 
-string? paths = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User);
+IEnvService op = new EnvService();
+string? paths = op.GetPaths();
 
 if (paths != null)
 {
 	List<string> selectedPaths = new();
-	List<Action> actions = new();
+	List<Ops> actions = new();
+	bool isQuit = false;
 	
-	while (true)
+	while (!isQuit)
 	{
 		var entries = paths.Split(';');
 		ShowList(entries);
@@ -15,85 +17,93 @@ if (paths != null)
 		switch (action)
 		{
 			case ActionType.Add:
-				var newPath = GetNewPath();
-				if (!DoAdd(newPath))
+				var newPath = GetNewPath().Trim();
+				(string pathNew, bool res) = op.Add(paths, newPath);
+				if (!res)
 				{
-					Console.WriteLine("Failed to add");
-					ShowMenu();	
+					AnsiConsole.WriteLine(pathNew);
+					break;
 				} 
-
-				actions.Add(new Action(ActionType.Add, newPath));
-				ShowList(paths.Split(';'));
+				paths = pathNew;
+				actions.Add(new Ops(ActionType.Add, newPath));
+				Console.ReadKey();
 				break;
 			case ActionType.Edit:
 				string path = GetPathToEdit(entries);
-				DoEdit(path);	
-				actions.Add(new Action(ActionType.Edit, $@"Edited: { path }"));
+				AnsiConsole.Markup($"[bold green]Selected path: { path }[/]\n");
+				string pathToAdd = GetNewPath().Trim();
+				AnsiConsole.Markup($"[bold red]{ path }[/] -> [bold green]{ pathToAdd }[/]");
+				(string updatedPath, bool result) = op.Add(paths, pathToAdd);
+				if (!result)
+				{
+					AnsiConsole.WriteLine("Failed to add");
+					break;
+				} 
+				paths = op.Remove(updatedPath, path);
+				actions.Add(new Ops(ActionType.Edit, $@"Edited: { path }"));
 				Console.WriteLine();
 				break;
 			case ActionType.Remove:
-				// AnsiConsole.Clear();
 				selectedPaths = GetSelectedPaths(entries);
-				foreach (var p in selectedPaths)
-				{
-					DoRemove(p);
-					actions.Add(new Action(ActionType.Remove, p));
-				}
-				// AnsiConsole.Clear();	
+				paths = op.Remove(paths.Split(';'), selectedPaths);
+				selectedPaths.ForEach(p => actions.Add(new Ops(ActionType.Remove, p)));
 				ShowList(paths.Split(';'));
 				break;
 			default:
-				Environment.Exit(0);
-				AnsiConsole.Clear();
+				isQuit = true;
 				break;
 		}
-		
-		var selected = AnsiConsole.Prompt(
-			new SelectionPrompt<ActionType>()
-			.Title("Environment variables have been modified: ")
-			.AddChoices(new ActionType[]
-			{
-				ActionType.Continue, ActionType.View, ActionType.Save
-			}));
-
-		switch (selected)	
+	}
+	
+	if (!op.GetPaths()!.Equals(paths))
+	{
+		while (true)
 		{
-			case ActionType.View:
-				// AnsiConsole.Clear();
-				AnsiConsole.Markup("[bold red]Pending Changes:\n[/]");
-				ShowChanges(actions);
-				AnsiConsole.Write("Press any key to continuee...");
-				Console.ReadKey();
-				// AnsiConsole.Clear();
-				break;
-			case ActionType.Save:
-				Save();
-				break;
-			case ActionType.Continue:
-			default:
-				break;
+			var selected = AnsiConsole.Prompt(
+				new SelectionPrompt<ActionType>()
+				.Title("Environment variables have been modified. ")
+				.AddChoices(new ActionType[]
+				{
+					ActionType.View, ActionType.Save, ActionType.Quit 
+				}));
+
+			switch (selected)	
+			{
+				case ActionType.View:
+					AnsiConsole.Markup("[bold red]Pending Changes:\n[/]");
+					ShowChanges(actions);
+					AnsiConsole.Write("Press any key to continue...");
+					Console.ReadKey();
+					break;
+				case ActionType.Save:
+					op.Save(paths);
+					break;
+				case ActionType.Quit:	
+					Environment.Exit(0);
+					break;
+			}
 		}
 	}
 }
 
 /* *************************** */
-/*          METHODS            */
+/*          FUNCTIONS          */
 /*                             */
 /* *************************** */
 
 List<string> GetSelectedPaths(string[] paths)
 {
-		AnsiConsole.Markup("[bold yellow]User PATH Entries:[/]");
-		return AnsiConsole.Prompt(
-			 new MultiSelectionPrompt<string>()
-				.Title("Select a user path:")
-				.NotRequired()
-				.InstructionsText(
-					            "[grey](Press [blue]<space>[/] to select a path, " +
-								"[green]<enter>[/] to accept)[/]")
-				.AddChoices(paths.Where(e => !String.IsNullOrEmpty(e)))
-		
-		) ?? new();
+	AnsiConsole.Markup("[bold yellow]User PATH Entries:[/]");
+	return AnsiConsole.Prompt(
+		 new MultiSelectionPrompt<string>()
+			.Title("Select a user path:")
+			.NotRequired()
+			.InstructionsText(
+	            "[grey](Press [blue]<space>[/] to select a path, " +
+				"[green]<enter>[/] to accept)[/]")
+			.AddChoices(paths.Where(e => !String.IsNullOrEmpty(e)))
+	
+	) ?? new();
 }
 
 string GetPathToEdit(string[] paths)
@@ -114,56 +124,29 @@ ActionType ShowMenu()
 		}));
 }
 
-string GetNewPath() => AnsiConsole.Prompt(new TextPrompt<string>("Enter new path: "));
-
-bool DoAdd(string path)
-{
-	if (paths.Contains(path, StringComparison.OrdinalIgnoreCase))
-		return false;
-		
-	paths = String.Concat(paths, path, ';');
-	return true;
-}
-
-void Save()
-{
-	Environment.SetEnvironmentVariable("PATH", paths, EnvironmentVariableTarget.User);
-}
-
-void DoEdit(string oldPath)
-{
-	var newPath = GetNewPath();
-	AnsiConsole.Markup($"[red]{ oldPath }[/] to [green]{ newPath }[/]");
-	Console.ReadKey();
-	
-	if (!DoAdd(newPath)) Console.WriteLine("Already existing.");
-	
-	DoRemove(oldPath); 
-}
-
-void DoRemove(string path)
-{
-	var temp = paths.Split(';')
-				.Where(p => !p.Equals(path, StringComparison.OrdinalIgnoreCase));
-				
-	paths = string.Join(';', temp);			
-}
+string GetNewPath() => AnsiConsole.Prompt(new TextPrompt<string>("Enter new path: ")).Trim();
 
 void ShowList(string[] paths)
 {
-	var table = new Table();
 	var entries = paths.Where(e => !String.IsNullOrEmpty(e)).ToList();
+	if (!entries.Any())
+	{
+		AnsiConsole.Markup("[bold red]No paths available.");
+		return;
+	}
+	
+	var table = new Table();
 	table.AddColumn("Id");
 	table.AddColumn(new TableColumn(new Markup("[red]Path[/]")));
-	for (int i = 1; i < entries.Count(); i++)
+	for (int i = 0; i < entries.Count(); i++)
 	{
-		table.AddRow($"{ i }", entries[i]);
+		table.AddRow($"{ i + 1 }", entries[i]);
 	}
 		
 	AnsiConsole.Write(table);
 }
 
-void ShowChanges(List<Action> actions)
+void ShowChanges(List<Ops> actions)
 {
 	var table = new Table();
 	table.AddColumn("Action");
@@ -179,14 +162,13 @@ void ShowChanges(List<Action> actions)
 /*                             */
 /* *************************** */
 
-interface IOperation
+interface IEnvService
 {
-	void ShowList();
-	void ShowChanges();
-	void Add(string path);
-	void Edit(string oldPath, string newPath);
-	void Remove(string path);
-	void GetPaths();
+	(string, bool) Add(string path, string newPath);
+	string  Remove(string path, string pathToDelete);
+	string  Remove(string[] path, List<string> paths);
+	string? GetPaths();
+	void Save(string paths);
 }
 
 /* *************************** */
@@ -194,40 +176,36 @@ interface IOperation
 /*                             */
 /* *************************** */
 
-class Operation : IOperation
+class EnvService : IEnvService
 {
-	public void GetPaths()
+	public string? GetPaths() => Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User);
+		
+    public (string, bool) Add(string paths, string path)
+    {
+		if (paths.Contains(path, StringComparison.OrdinalIgnoreCase))
+			return ("Path already exists.", false);
+		
+		paths = String.Concat(paths, path, ';');
+		return (paths, true);
+    }
+	
+    public string Remove(string paths, string path)
+    {
+		var temp = paths.Split(';').Where(p => !p.Equals(path, StringComparison.OrdinalIgnoreCase));
+		return string.Join(';', temp);
+    }
+	
+	public string Remove(string[] path, List<string> paths)
 	{
-        throw new NotImplementedException();
+		var temp = path.Except(paths);
+		return string.Join(';', temp.Select(p => p.ToString()));
 	}
 	
-    public void Add(string path)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void Edit(string oldPath, string newPath)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void Remove(string path)
-    {
-        throw new NotImplementedException();
-    }
-
-    public void ShowChanges()
-    {
-        throw new NotImplementedException();
-    }
-
-    public void ShowList()
-    {
-        throw new NotImplementedException();
-    }
+	public void Save(string paths) => Environment.SetEnvironmentVariable("PATH", paths, EnvironmentVariableTarget.User);
+		
 }
 
-record Action(ActionType ActionType, string Path);
+record Ops(ActionType ActionType, string Path);
 
 enum ActionType
 {
@@ -236,6 +214,6 @@ enum ActionType
 	Remove,
 	Quit,
 	Continue,
-	Save,
-	View
+	View,
+	Save
 }
