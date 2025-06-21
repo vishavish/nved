@@ -189,11 +189,11 @@ class EnvService : IEnvService
 		return (paths, true);
     }
 	
-    public string Remove(string paths, string path)
-    {
+	public string Remove(string paths, string path)
+	{
 		var temp = paths.Split(';').Where(p => !p.Equals(path, StringComparison.OrdinalIgnoreCase));
 		return string.Join(';', temp);
-    }
+	}
 	
 	public string Remove(string[] path, List<string> paths)
 	{
