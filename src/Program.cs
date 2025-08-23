@@ -8,29 +8,29 @@ if (paths is not null)
     List<string> selectedPaths = new();
     List<Ops> actions = new();
     bool isQuit = false;
+    ShowList(paths.Split(';'));
 
     while (!isQuit)
     {
-        var entries = paths.Split(';');
-        ShowList(entries);
         var action = ShowMenu();
         switch (action)
         {
             case ActionType.Add:
-                var newPath = GetNewPath().Trim();
-                (string pathNew, bool res) = op.Add(paths, newPath);
+                var newPath = GetNewPath();
+                (string newPaths, bool res) = op.Add(paths, newPath);
                 if (!res)
                 {
-                    AnsiConsole.WriteLine(pathNew);
+                    AnsiConsole.WriteLine("Failed to add path.");
                     break;
                 }
-                paths = pathNew;
+                paths = newPaths;
                 actions.Add(new Ops(ActionType.Add, newPath));
+                ShowList(paths.Split(';'));
                 break;
             case ActionType.Edit:
-                string path = GetPathToEdit(entries);
+                string path = GetPathToEdit(paths.Split(';'));
                 AnsiConsole.Markup($"[bold green]SELECTED PATH: [[{path}]][/]\n");
-                string pathToAdd = GetNewPath().Trim();
+                string pathToAdd = GetNewPath();
                 AnsiConsole.Markup($"[bold red]{path}[/] -> [bold green]{pathToAdd}[/]\n");
                 (string updatedPath, bool result) = op.Add(paths, pathToAdd);
                 if (!result)
@@ -42,11 +42,13 @@ if (paths is not null)
                 actions.Add(new Ops(ActionType.Edit, $@"[bold red]{path}[/] -> [bold green]{pathToAdd}[/]"));
                 AnsiConsole.WriteLine("Press any key to continue...");
                 Console.ReadKey();
+                ShowList(paths.Split(';'));
                 break;
             case ActionType.Remove:
-                selectedPaths = GetSelectedPaths(entries);
+                selectedPaths = GetSelectedPaths(paths.Split(';'));
                 paths = op.Remove(paths.Split(';'), selectedPaths);
                 selectedPaths.ForEach(p => actions.Add(new Ops(ActionType.Remove, p)));
+                ShowList(paths.Split(';'));
                 break;
             default:
                 isQuit = true;
@@ -189,7 +191,7 @@ class EnvService : IEnvService
         if (paths.Contains(path, StringComparison.OrdinalIgnoreCase))
             return ("Path already exists.", false);
 
-        paths = String.Concat(paths, path, ';');
+        paths = String.Join(';', new string[]{paths, path});
         return (paths, true);
     }
 
