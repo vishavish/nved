@@ -8,7 +8,11 @@ if (paths is not null)
     List<string> selectedPaths = new();
     List<Ops> actions = new();
     bool isQuit = false;
+#if WINDOWS
     ShowList(paths.Split(';'));
+#else
+    ShowList(paths.Split(':'));
+#endif
 
     while (!isQuit)
     {
@@ -184,8 +188,12 @@ interface IEnvService
 
 class EnvService : IEnvService
 {
+#if WINDOWS
     public string? GetPaths() => Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User);
-
+#else
+    public string? GetPaths() => Environment.GetEnvironmentVariable("PATH");
+#endif
+        
     public (string, bool) Add(string paths, string path)
     {
         if (paths.Contains(path, StringComparison.OrdinalIgnoreCase))
